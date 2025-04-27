@@ -8,4 +8,4 @@ pydantic-settings
 pinecone
 python-telegram-bot>=20.0
 openai 
-llama-cpp-python
+# llama-cpp-python
