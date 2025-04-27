@@ -2,15 +2,21 @@
 import logging
 from typing import Tuple
 
-from app.orchestration.dispatcher import AGENT_REGISTRY
+from app.orchestration.registry import AGENT_REGISTRY
+
+
 
 logger = logging.getLogger(__name__)
 
 class MasterAgent:
     def __init__(self):
         # Placeholder for future LLM client
-        pass
+        self.registry = AGENT_REGISTRY
 
+        pass
+    def decide(self, user_input: str) -> str:
+         # ... your logic to pick an agent or n8n workflow ...
+   
     def classify_intent(self, text: str) -> str:
         """
         Decide which agent should handle this text.

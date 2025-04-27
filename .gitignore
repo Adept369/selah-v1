@@ -6,3 +6,5 @@ __pycache__/
 .vscode/
 # Docker
 *.log
+# Local Python virtualenv
+.venv/
