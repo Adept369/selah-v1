@@ -9,3 +9,14 @@ pinecone
 python-telegram-bot>=20.0
 openai 
 # llama-cpp-python
+pytest
+pytest-asyncio # remove for production
+pypandoc
+pandoc
+pdf2docx
+PyPDF2 
+python-docx 
+docx2pdf 
+pydub 
+SpeechRecognition 
+pandas

@@ -2,6 +2,7 @@
 
 import os
 import logging
+from time import perf_counter
 
 logger = logging.getLogger(__name__)
 
@@ -28,20 +29,40 @@ class LLMClient:
         logger.info("Initialized LLMClient with backend %r", self.backend)
 
     def generate(self, prompt: str, **kwargs) -> str:
+        """
+        Generate a completion for the given prompt.
+        Logs prompt, kwargs, backend, duration and (truncated) response.
+        """
+        logger.info(
+            "LLMClient.generate start: backend=%r prompt=%r kwargs=%s",
+            self.backend, prompt, kwargs
+        )
+        start = perf_counter()
+
         if self.backend == "openai":
-            # Customize temperature, max_tokens, etc. via kwargs
+            # Customize model, temperature, max_tokens, etc. via kwargs
+            model = kwargs.pop("model", "gpt-3.5-turbo")
             resp = self.client.chat.completions.create(
-                model=kwargs.pop("model", "gpt-3.5-turbo"),
+                model=model,
                 messages=[{"role": "user", "content": prompt}],
                 **kwargs
             )
-            return resp.choices[0].message.content
+            result = resp.choices[0].message.content
 
         elif self.backend == "llama":
-            # transformers pipeline returns a list of dicts
             out = self.client(prompt, **kwargs)
-            return out[0].get("generated_text", "")
+            result = out[0].get("generated_text", "")
 
         else:
             # Should never happen
             raise RuntimeError(f"Unsupported backend {self.backend!r}")
+
+        duration = perf_counter() - start
+        # Truncate long responses in the log
+        display = result if len(result) < 200 else result[:200] + "...(truncated)"
+        logger.info(
+            "LLMClient.generate completed in %.3fs, response=%r",
+            duration,
+            display
+        )
+        return result
