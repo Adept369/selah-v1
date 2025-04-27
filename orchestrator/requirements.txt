@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-dotenv
+pydantic
+requests
+pika
+pydantic-settings
+pinecone
+python-telegram-bot>=20.0

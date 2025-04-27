@@ -1,0 +1,43 @@
+version: '3.8'
+services:
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    environment:
+       # the name your Pydantic Settings class is looking for:
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - TELEGRAM_TOKEN=${BOT_TOKEN}
+
+      # rabbitmq URL that your Settings class needs
+      - RABBITMQ_URL=amqp://rabbitmq:5672/
+
+      # wherever n8n is listening for bot replies
+      - N8N_URL=http://n8n:5678/webhook
+
+      # if you’re using Pinecone, and your code reads these…
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_ENV=${PINECONE_ENV}
+    depends_on:
+      - rabbitmq
+      - n8n
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  n8n:
+    image: n8nio/n8n
+    ports:
+      - "5678:5678"
+    
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
