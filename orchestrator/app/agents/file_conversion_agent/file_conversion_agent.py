@@ -1,11 +1,11 @@
-# app/agents/file_conversion_agent.py
-
 import logging
 import os
 from pathlib import Path
 from typing import Any, Tuple
 
 import pypandoc
+
+from speech_recognition import UnknownValueError  # ← catch this
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +33,14 @@ class FileConversionAgent:
         except OSError:
             logger.info("Pandoc not found on PATH; downloading bundled Pandoc...")
             pypandoc.download_pandoc()
-        logger.info("Initialized FileConversionAgent with pandoc at %s", pypandoc.get_pandoc_path())
+        logger.info(
+            "Initialized FileConversionAgent with pandoc at %s",
+            pypandoc.get_pandoc_path(),
+        )
         if not PDF2DOCX_AVAILABLE:
-            logger.warning("pdf2docx not installed; PDF→DOCX via pdf2docx will be unavailable")
+            logger.warning(
+                "pdf2docx not installed; PDF→DOCX via pdf2docx will be unavailable"
+            )
 
     def _parse_command(self, query: str) -> Tuple[str, str]:
         """
@@ -77,11 +82,13 @@ class FileConversionAgent:
         # 2) PDF → DOCX via PyPDF2 + python-docx
         if src_ext == "pdf" and fmt == "docx" and not PDF2DOCX_AVAILABLE:
             try:
-                from PyPDF2 import PdfReader
-                from docx import Document
+                from PyPDF2 import PdfReader  # type: ignore
+                from docx import Document     # type: ignore
             except ImportError:
-                return ("⚠️ Cannot convert PDF→DOCX: "
-                        "install `pdf2docx` or `PyPDF2`+`python-docx`")
+                return (
+                    "⚠️ Cannot convert PDF→DOCX: "
+                    "install `pdf2docx` or `PyPDF2`+`python-docx`"
+                )
             logger.info("Converting PDF→DOCX with PyPDF2+docx: %s → %s", src, dst_path)
             reader = PdfReader(str(src_path))
             doc = Document()
@@ -131,20 +138,40 @@ class FileConversionAgent:
         return str(out)
 
     def audio_to_text(self, audio_path: str, output_path: str | None = None) -> str:
+        """Transcribe an audio file (ogg/mp3/wav) to text using SpeechRecognition."""
+
+        # 1) Ensure we have a wav file
+        from pydub import AudioSegment  # type: ignore
         try:
-            from pydub import AudioSegment  # type: ignore
-            import speech_recognition as sr  # type: ignore
-        except ImportError:
-            raise RuntimeError("pydub and SpeechRecognition are required for Audio→Text")
-        audio_p = Path(audio_path)
-        wav = audio_p.with_suffix(".wav")
-        if audio_p.suffix.lower() != ".wav":
-            AudioSegment.from_file(str(audio_p)).export(str(wav), format="wav")
+            orig = Path(audio_path)
+            wav_path = orig.with_suffix(".wav")
+            AudioSegment.from_file(str(orig)).export(str(wav_path), format="wav")
+            logger.info("Converted %s → %s for transcription", orig, wav_path)
+        except Exception as e:
+            logger.exception("Failed to convert to wav")
+            return f"⚠️ Audio conversion error: {e}"
+
+        # 2) Do the transcription
+        import speech_recognition as sr  # type: ignore
+        from speech_recognition import UnknownValueError
+
         recognizer = sr.Recognizer()
-        with sr.AudioFile(str(wav)) as src:
-            audio = recognizer.record(src)
-        transcript = recognizer.recognize_google(audio)
+        try:
+            with sr.AudioFile(str(wav_path)) as src:
+                audio_data = recognizer.record(src)
+            text = recognizer.recognize_google(audio_data)
+        except UnknownValueError:
+            logger.warning("Could not understand audio %s", wav_path)
+            return "⚠️ Sorry, I couldn't understand the audio."
+        except Exception as e:
+            logger.exception("Transcription failed")
+            return f"⚠️ Transcription error: {e}"
+
+        # 3) Write out or return
         if output_path:
-            Path(output_path).write_text(transcript, encoding="utf-8")
+            Path(output_path).write_text(text, encoding="utf-8")
+            logger.info("Wrote transcript to %s", output_path)
             return str(output_path)
-        return transcript
+
+        logger.info("Transcription complete for %s", wav_path)
+        return text

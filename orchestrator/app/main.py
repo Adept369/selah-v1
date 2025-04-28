@@ -3,6 +3,7 @@
 import logging
 import os
 import tempfile
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Header, HTTPException
 from telegram import Bot
@@ -21,27 +22,28 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=settings.TELEGRAM_TOKEN)
 llm_client = LLMClient(settings)
 master = MasterAgent(llm_client=llm_client)
-audio_agent = FileConversionAgent(llm_client=None)  # only uses audio_to_text
+audio_agent = FileConversionAgent(llm_client=None)  # only uses audio_to_text()
 
 app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {"message": "✅ Inter-Tribal Chambers bot is live!"}
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-@app.get("/")
-async def root():
-    return {"message": "✅ Inter-Tribal Chambers bot is live!"}
 
 @app.post("/webhook")
 async def telegram_webhook(
     request: Request,
     secret: str = Header(None, alias="X-Telegram-Bot-Api-Secret-Token"),
 ):
-    # 1) optional secret check
+    # 1) Secret check
     if settings.WEBHOOK_SECRET and secret != settings.WEBHOOK_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    # 2) parse incoming update
+    # 2) Parse update
     try:
         update = await request.json()
     except Exception:
@@ -53,34 +55,35 @@ async def telegram_webhook(
 
     chat_id = msg["chat"]["id"]
 
-    # 3) detect voice vs text
-    if "voice" in msg:
-        # download the voice note
-        file_id = msg["voice"]["file_id"]
-       
+    # 3) Handle voice vs text
+    if "voice" in msg or "audio" in msg:
+        file_id = (msg.get("voice") or msg.get("audio"))["file_id"]
 
-         # 1) fetch the File object
+        # Download to a temp .oga/.ogg
         tg_file = await bot.get_file(file_id)
-        # 2) write it to a temp .ogg
         tf = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
-        await tg_file.download_to_drive(tf.name)
+        await tg_file.download(custom_path=tf.name)
         tf.close()
         logger.info("Downloaded voice note to %s", tf.name)
 
-        # transcribe
+        # Transcribe
         try:
             user_input = audio_agent.audio_to_text(tf.name)
             logger.info("Transcription result: %r", user_input)
+        except Exception as e:
+            logger.error("Audio transcription failed: %s", e)
+            user_input = "⚠️ Audio processing error."
         finally:
             os.unlink(tf.name)
+
     else:
         user_input = msg.get("text", "")
 
-    # 4) route to MasterAgent
+    # 4) Route the (possibly-transcribed) text through MasterAgent
     fake_update = {"message": {"chat": {"id": chat_id}, "text": user_input}}
     reply_text = await master.run(fake_update)
 
-    # 5) generate witty one-liner on the original user_input
+    # 5) Generate a short, witty one-liner about the user_input
     witty = None
     if user_input:
         try:
@@ -93,15 +96,16 @@ async def telegram_webhook(
         except Exception as e:
             logger.error("Failed to generate witty line: %s", e)
 
-    # 6a) send the full answer back as text
+    # 6a) Send the full answer back as text
     if reply_text:
         try:
             await bot.send_message(chat_id=chat_id, text=reply_text)
         except TelegramError as e:
             logger.error("Failed to send text reply: %s", e)
 
-    # 6b) if we have a witty line, TTS it and send as voice note
+    # 6b) If we have a witty line, TTS it and send as voice note
     if witty:
+        mp3_file = None
         try:
             tts = gTTS(witty)
             mp3_file = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
@@ -114,8 +118,8 @@ async def telegram_webhook(
         except Exception as e:
             logger.error("Failed to send witty voice note: %s", e)
         finally:
-            if os.path.exists(mp3_file.name):
+            if mp3_file and os.path.exists(mp3_file.name):
                 os.unlink(mp3_file.name)
 
-    # 7) always return non-null JSON
+    # 7) Always return non-null JSON
     return {"status": "ok", "reply": reply_text, "witty": witty}
