@@ -30,7 +30,7 @@ async def telegram_webhook(
     if settings.WEBHOOK_SECRET and secret != settings.WEBHOOK_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    # 2) parse update
+    # 2) parse update #
     try:
         update = await request.json()
     except Exception:
