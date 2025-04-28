@@ -28,6 +28,9 @@ app = FastAPI()
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+@app.get("/")
+async def root():
+    return {"message": "✅ Inter-Tribal Chambers bot is live!"}
 
 @app.post("/webhook")
 async def telegram_webhook(
